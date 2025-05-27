@@ -1,11 +1,9 @@
-# 📦 `ppu-yolo-onnx-inference`
+# `ppu-yolo-onnx-inference`
 
 ![ppu-yolo-onnx-inference](https://raw.githubusercontent.com/PT-Perkasa-Pilar-Utama/ppu-yolo-onnx-inference/refs/heads/main/assets/ppu-yolo-onnx-inference.png)
 
-Easily run YOLOv11 object detection models in a TypeScript Bun environment.
-No Python, PyTorch, or heavy dependencies needed.
+Easily run YOLOv11 object detection models in a TypeScript Bun environment. No Python, PyTorch, or heavy dependencies needed. Supports multiple independent instances of YOLOv11 models, each with its own inference session.
 
-Supports multiple independent instances of YOLOv11 models, each with its own inference session.  
 YOLO in javascript runtime should as easy as:
 
 ```ts
