@@ -21,8 +21,6 @@ const model = new YoloDetectionInference({
 
 await model.init();
 const detections = await model.detect(imageBuffer);
-
-// clean up session if not used anymore
 await model.destroy();
 ```
 
