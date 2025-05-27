@@ -1,0 +1,49 @@
+{
+  "name": "ppu-yolo-onnx-inference",
+  "version": "0.0.1",
+  "description": "Use your YOLO onnx object detection model in Typescript Bun environment easily.",
+  "keywords": [
+    "yolo",
+    "object-detection",
+    "yolov11",
+    "onnx",
+    "onnxruntime",
+    "computer-vision",
+    "image-processing",
+    "bun-compatible",
+    "bun",
+    "typescript"
+  ],
+  "author": "snowfluke",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "scripts": {
+    "task": "bun scripts/task.ts",
+    "build:test": "bun task build && bun test",
+    "build:publish": "bun task build && bun task report-size && bun task publish",
+    "lint": "eslint ./src",
+    "lint:fix": "eslint ./src --fix"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "latest",
+    "@types/bun": "latest",
+    "@types/uglify-js": "latest",
+    "eslint": "latest",
+    "eslint-plugin-jsdoc": "latest",
+    "mitata": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "typescript-eslint": "latest",
+    "uglify-js": ">=2.4.24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PT-Perkasa-Pilar-Utama/ppu-yolo-onnx-inference.git"
+  },
+  "dependencies": {
+    "onnxruntime-node": "^1.21.1",
+    "ppu-ocv": "^1.2.3"
+  }
+}
