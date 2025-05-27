@@ -1,6 +1,6 @@
 {
   "name": "ppu-yolo-onnx-inference",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Use your YOLO onnx object detection model in Typescript Bun environment easily.",
   "keywords": [
     "yolo",

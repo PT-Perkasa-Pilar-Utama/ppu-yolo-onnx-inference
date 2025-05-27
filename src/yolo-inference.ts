@@ -74,6 +74,8 @@ export class YoloDetectionInference {
       }
 
       this.session = await ort.InferenceSession.create(resolvedModelPath);
+      await new Promise((resolve) => setImmediate(resolve));
+
       this.log(
         "init",
         `Model loaded successfully\n\tinputNames: ${
