@@ -26,11 +26,11 @@ await model.destroy();
 
 ### Why use this library?
 
-✅ **Lightweight & Fast**: Inference runs with onnxruntime-web or onnxruntime-node in a JS/TS environment. No Python or PyTorch required.
-✅ **Multi-instance Ready**: You can load and run multiple YOLO models (even different sizes) independently and concurrently.
-✅ **Flexible Deployment**: Ideal for server-side Bun inference or potential browser/WebAssembly support in the future.
-✅ **Easy Integration**: Minimal configuration, with out-of-the-box support for ONNX models.
-✅ **Bun Optimized**: Designed for Bun’s performance, though can be extended for Node.js with community help.
+- ✅ **Lightweight & Fast**: Inference runs with onnxruntime-web or onnxruntime-node in a JS/TS environment. No Python or PyTorch required.
+- ✅ **Multi-instance Ready**: You can load and run multiple YOLO models (even different sizes) independently and concurrently.
+- ✅ **Flexible Deployment**: Ideal for server-side Bun inference or potential browser/WebAssembly support in the future.
+- ✅ **Easy Integration**: Minimal configuration, with out-of-the-box support for ONNX models.
+- ✅ **Bun Optimized**: Designed for Bun’s performance, though can be extended for Node.js with community help.
 
 ## Installation
 
