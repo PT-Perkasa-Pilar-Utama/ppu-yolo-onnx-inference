@@ -4,6 +4,8 @@
 
 Easily run YOLOv11 object detection models in a TypeScript Bun environment. No Python, PyTorch, or heavy dependencies needed. Supports multiple independent instances of YOLOv11 models, each with its own inference session.
 
+See: [Demo repo](https://github.com/PT-Perkasa-Pilar-Utama/yolo-onnx-bun-demo)
+
 YOLO in javascript runtime should as easy as:
 
 ```ts
