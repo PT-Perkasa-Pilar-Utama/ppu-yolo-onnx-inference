@@ -30,6 +30,7 @@
     "@stylistic/eslint-plugin": "latest",
     "@types/bun": "latest",
     "@types/uglify-js": "latest",
+    "bun-types": "^1.2.16",
     "eslint": "latest",
     "eslint-plugin-jsdoc": "latest",
     "mitata": "latest",
