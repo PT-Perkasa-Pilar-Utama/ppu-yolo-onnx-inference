@@ -1,16 +1,20 @@
 import { YoloDetectionInference } from "../src/yolo-inference";
+import { COCO128_CLASS } from "./coco128/coco128-class";
 // import { YoloDetectionInference } from "ppu-yolo-onnx-inference";
 
 async function main() {
-  const imageFile = Bun.file("./out/002.jpg");
+  const imageFile = Bun.file("./examples/coco128/person.png");
   const imageBuffer = await imageFile.arrayBuffer();
+
+  const modelFile = Bun.file("./examples/coco128/coco128.onnx");
+  const modelBuffer = await modelFile.arrayBuffer();
 
   try {
     let start = Date.now();
     const model = new YoloDetectionInference({
       model: {
-        path: "./your_yolo_model.onnx",
-        classNames: ["person", "car", "bicycle"],
+        onnx: modelBuffer,
+        classNames: COCO128_CLASS,
       },
       thresholds: {
         confidence: 0.5,
