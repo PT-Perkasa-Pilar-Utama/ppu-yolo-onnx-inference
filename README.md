@@ -77,10 +77,10 @@ export interface YoloDetectionOptions {
 
 #### `ModelOptions`
 
-| Property     | Type       | Description                                                 |
-| ------------ | ---------- | ----------------------------------------------------------- |
-| `path`       | `string`   | Path to the YOLOv11 ONNX model file.                        |
-| `classNames` | `string[]` | Array of class names corresponding to model output indices. |
+| Property     | Type          | Description                                                 |
+| ------------ | ------------- | ----------------------------------------------------------- |
+| `onnx`       | `ArrayBuffer` | The YOLOv11 ONNX model file.                                |
+| `classNames` | `string[]`    | Array of class names corresponding to model output indices. |
 
 #### `ModelThresholds`
 

@@ -18,5 +18,3 @@ export {
   DEFAULT_THRESHOLDS,
   STANDARD_MODEL_INPUT_SHAPE,
 } from "./constant";
-
-export { PathManager } from "./path-manager";

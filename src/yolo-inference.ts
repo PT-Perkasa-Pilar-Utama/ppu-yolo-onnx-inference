@@ -15,7 +15,6 @@ import type {
   TensorValueMetadata,
   YoloDetectionOptions,
 } from "./interface";
-import { PathManager } from "./path-manager";
 
 /**
  * YOLOv11 Object Detection Inference Engine
@@ -38,7 +37,7 @@ import { PathManager } from "./path-manager";
  * const detections = await detector.detect(imageBuffer);
  */
 export class YoloDetectionInference {
-  private readonly modelPath: string;
+  private readonly model: ArrayBuffer;
   private readonly classNames: string[];
   private readonly thresholds: Required<ModelThresholds>;
   private readonly debugging: Required<DebuggingOptions>;
@@ -47,7 +46,7 @@ export class YoloDetectionInference {
   private static readonly CHANNELS = 3;
 
   constructor(options: YoloDetectionOptions) {
-    this.modelPath = options.model.path;
+    this.model = options.model.onnx;
     this.classNames = options.model.classNames;
     this.thresholds = { ...DEFAULT_THRESHOLDS, ...options.thresholds };
     this.debugging = { ...DEFAULT_DEBUG_OPTIONS, ...options.debug };
@@ -58,22 +57,13 @@ export class YoloDetectionInference {
    * Initialize the YOLO model and prepare for inference
    */
   public async init(): Promise<void> {
-    if (!this.modelPath) {
-      throw new Error("Model path is required");
+    if (!this.model) {
+      throw new Error("Model ArrayBuffer is required");
     }
 
     try {
-      const resolvedModelPath = PathManager.resolvePath(this.modelPath);
-      await PathManager.validateFilePath(resolvedModelPath);
-
-      this.log("init", `Loading model: ${resolvedModelPath}`);
-
-      if (this.debugging.debug) {
-        const debugPath = PathManager.resolvePath(this.debugging.debugFolder);
-        await PathManager.ensureDirectoryExists(debugPath);
-      }
-
-      this.session = await ort.InferenceSession.create(resolvedModelPath);
+      this.log("init", `Loading model`);
+      this.session = await ort.InferenceSession.create(this.model);
       await new Promise((resolve) => setImmediate(resolve));
 
       this.log(

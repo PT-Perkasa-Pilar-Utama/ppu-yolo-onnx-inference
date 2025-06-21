@@ -39,7 +39,7 @@ export interface Box {
 }
 
 export interface ModelOptions {
-  path: string; // Path to the ONNX model file
+  onnx: ArrayBuffer; // ArrayBuffer imported of the ONNX model file
   classNames: string[]; // List of class names for object detection
 }
 
