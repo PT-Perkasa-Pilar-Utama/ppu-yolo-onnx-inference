@@ -13,7 +13,7 @@ import { YoloDetectionInference } from "ppu-yolo-onnx-inference";
 
 const model = new YoloDetectionInference({
   model: {
-    path: "./model.onnx",
+    onnx: myOnnxModel,
     classNames: ["person", "car", "bicycle"],
   },
   thresholds: {
