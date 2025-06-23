@@ -76,6 +76,8 @@ export interface PreprocessYoloResult {
   originalWidth: number;
   originalHeight: number;
   scaleRatio: number;
+  padX: number;
+  padY: number;
 }
 
 export interface DetectedObject {

@@ -181,8 +181,14 @@ export class YoloDetectionInference {
     const scaledWidth = Math.round(originalWidth * scaleRatio);
     const scaledHeight = Math.round(originalHeight * scaleRatio);
 
+    const padX = (modelInputWidth - scaledWidth) / 2;
+    const padY = (modelInputHeight - scaledHeight) / 2;
+
     const scaledCanvas = createCanvas(modelInputWidth, modelInputHeight);
     const ctx = scaledCanvas.getContext("2d");
+
+    ctx.fillStyle = "rgb(114, 114, 114)";
+    ctx.fillRect(0, 0, modelInputWidth, modelInputHeight);
 
     const processor = new ImageProcessor(canvas);
     const resized = processor
@@ -190,7 +196,9 @@ export class YoloDetectionInference {
       .toCanvas();
     processor.destroy();
 
-    ctx.drawImage(resized, 0, 0, scaledWidth, scaledHeight);
+    // **FIX 3: Draw the resized image at the padded offset**
+    ctx.drawImage(resized, padX, padY, scaledWidth, scaledHeight);
+
     const tensor = this.canvasToTensor(
       scaledCanvas,
       modelInputWidth,
@@ -201,7 +209,7 @@ export class YoloDetectionInference {
       "preprocessImage",
       `Preprocessed: ${originalWidth}x${originalHeight} → ${modelInputWidth}x${modelInputHeight} (ratio: ${scaleRatio.toFixed(
         3
-      )})`
+      )}, padX: ${padX.toFixed(1)}, padY: ${padY.toFixed(1)})`
     );
 
     return {
@@ -211,6 +219,8 @@ export class YoloDetectionInference {
       originalWidth,
       originalHeight,
       scaleRatio,
+      padX,
+      padY,
     };
   }
 
@@ -341,7 +351,6 @@ export class YoloDetectionInference {
 
       if (finalConfidence > 0.1) highConfidenceCount++;
 
-      // Debug first few high confidence detections
       if (finalConfidence > 0.1 && debugCount < 5) {
         this.log(
           "extractCandidates",
@@ -571,10 +580,15 @@ export class YoloDetectionInference {
     return indices
       .map((i) => {
         const candidate = candidates[i];
-        const { scaleRatio, originalWidth, originalHeight } = preprocessed;
+        const { scaleRatio, originalWidth, originalHeight, padX, padY } =
+          preprocessed;
 
-        const x = Math.max(0, Math.round(candidate.box.x / scaleRatio));
-        const y = Math.max(0, Math.round(candidate.box.y / scaleRatio));
+        const unpaddedX = candidate.box.x - padX;
+        const unpaddedY = candidate.box.y - padY;
+
+        const x = Math.max(0, Math.round(unpaddedX / scaleRatio));
+        const y = Math.max(0, Math.round(unpaddedY / scaleRatio));
+
         const width = Math.min(
           originalWidth - x,
           Math.round(candidate.box.width / scaleRatio)
