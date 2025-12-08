@@ -36,14 +36,17 @@
     "tsx": "latest",
     "typescript": "latest",
     "typescript-eslint": "latest",
-    "uglify-js": ">=2.4.24"
+    "uglify-js": ">=2.4.24",
+    "onnxruntime-node": "^1.23.2"
+  },
+  "peerDependencies": {
+    "onnxruntime-node": "^1.23.2"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/PT-Perkasa-Pilar-Utama/ppu-yolo-onnx-inference.git"
   },
   "dependencies": {
-    "onnxruntime-node": "^1.21.1",
     "ppu-ocv": "^1.2.3"
   }
 }
