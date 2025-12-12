@@ -9,12 +9,12 @@ export type {
   TensorValueMetadata,
   ValueMetadataBase,
   YoloDetectionOptions,
-} from "./interface";
+} from "./interface.js";
 
-export { YoloDetectionInference } from "./yolo-inference";
+export { YoloDetectionInference } from "./yolo-inference.js";
 
 export {
   DEFAULT_DEBUG_OPTIONS,
   DEFAULT_THRESHOLDS,
   STANDARD_MODEL_INPUT_SHAPE,
-} from "./constant";
+} from "./constant.js";

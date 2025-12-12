@@ -4,7 +4,7 @@ import {
   DEFAULT_DEBUG_OPTIONS,
   DEFAULT_THRESHOLDS,
   STANDARD_MODEL_INPUT_SHAPE,
-} from "./constant";
+} from "./constant.js";
 import type {
   Box,
   DebuggingOptions,
@@ -14,7 +14,7 @@ import type {
   PreprocessYoloResult,
   TensorValueMetadata,
   YoloDetectionOptions,
-} from "./interface";
+} from "./interface.js";
 
 /**
  * YOLOv11 Object Detection Inference Engine

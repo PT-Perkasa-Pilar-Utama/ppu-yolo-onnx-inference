@@ -1,4 +1,4 @@
-import type { DebuggingOptions, ModelThresholds } from "./interface";
+import type { DebuggingOptions, ModelThresholds } from "./interface.js";
 
 export const DEFAULT_THRESHOLDS: Required<ModelThresholds> = {
   confidence: 0.75,
