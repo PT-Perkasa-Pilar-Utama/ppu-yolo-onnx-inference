@@ -1,6 +1,6 @@
 {
   "name": "ppu-yolo-onnx-inference",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Use your YOLO onnx object detection model in Typescript Bun environment easily.",
   "keywords": [
     "yolo",
@@ -48,6 +48,6 @@
     "url": "https://github.com/PT-Perkasa-Pilar-Utama/ppu-yolo-onnx-inference.git"
   },
   "dependencies": {
-    "ppu-ocv": "^1.2.3"
+    "ppu-ocv": "^1.7.0"
   }
 }
