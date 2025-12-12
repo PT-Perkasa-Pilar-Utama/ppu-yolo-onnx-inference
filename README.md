@@ -44,13 +44,6 @@ yarn add ppu-yolo-onnx-inference
 bun add ppu-yolo-onnx-inference
 ```
 
-> [!NOTE]
-> This project is developed and tested primarily with Bun.  
-> Support for Node.js, Deno, or browser environments is **not guaranteed**.
->
-> If you choose to use it outside of Bun and encounter any issues, feel free to report them.  
-> I'm open to fixing bugs for other runtimes with community help.
-
 ## Getting the onnx and class names
 
 See [`yolo-convert-onnx.py`](./examples/yolo-convert-onnx.py) to get the onnx file and class name list.
