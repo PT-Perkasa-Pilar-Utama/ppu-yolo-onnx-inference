@@ -2,68 +2,118 @@
 
 ![ppu-yolo-onnx-inference](https://raw.githubusercontent.com/PT-Perkasa-Pilar-Utama/ppu-yolo-onnx-inference/refs/heads/main/assets/ppu-yolo-onnx-inference.png)
 
-Easily run YOLOv11 object detection models in a TypeScript Bun environment. No Python, PyTorch, or heavy dependencies needed. Supports multiple independent instances of YOLOv11 models, each with its own inference session.
+Run YOLOv11 object detection in TypeScript — server-side (Bun / Node.js) or client-side (browser). No Python, no PyTorch. Supports multiple independent model instances with separate inference sessions.
 
-See: [Demo repo](https://github.com/PT-Perkasa-Pilar-Utama/yolo-onnx-bun-demo)
+### Features
 
-YOLO in javascript runtime should as easy as:
-
-```ts
-import { YoloDetectionInference } from "ppu-yolo-onnx-inference";
-
-const model = new YoloDetectionInference({
-  model: {
-    onnx: myOnnxModel,
-    classNames: ["person", "car", "bicycle"],
-  },
-  thresholds: {
-    confidence: 0.5,
-  },
-});
-
-await model.init();
-const detections = await model.detect(imageBuffer);
-await model.destroy();
-```
-
-### Why use this library?
-
-- ✅ **Lightweight & Fast**: Inference runs with onnxruntime-web or onnxruntime-node in a JS/TS environment. No Python or PyTorch required.
-- ✅ **Multi-instance Ready**: You can load and run multiple YOLO models (even different sizes) independently and concurrently.
-- ✅ **Flexible Deployment**: Ideal for server-side Bun inference or potential browser/WebAssembly support in the future.
-- ✅ **Easy Integration**: Minimal configuration, with out-of-the-box support for ONNX models.
-- ✅ **Bun Optimized**: Designed for Bun’s performance, though can be extended for Node.js with community help.
+- **Dual platform** — single codebase, works in Node.js/Bun and the browser
+- **Multi-instance** — load and run multiple YOLO models concurrently
+- **Lightweight** — powered by `onnxruntime-node` (server) or `onnxruntime-web` (browser)
+- **Zero config** — sensible defaults, minimal setup required
 
 ## Installation
 
-Install using your preferred package manager:
-
 ```bash
 npm install ppu-yolo-onnx-inference
-yarn add ppu-yolo-onnx-inference
-bun add ppu-yolo-onnx-inference
 ```
 
-## Getting the onnx and class names
+### Platform dependencies
 
-See [`yolo-convert-onnx.py`](./examples/yolo-convert-onnx.py) to get the onnx file and class name list.
+Install the runtime for your target platform:
+
+```bash
+# Server (Node.js / Bun)
+npm install onnxruntime-node
+
+# Browser
+npm install onnxruntime-web
+```
+
+Both are declared as optional peer dependencies — install only what you need.
+
+## Quick start
+
+### Server-side (Node.js / Bun)
+
+```ts
+import { YoloDetectionInference } from "ppu-yolo-onnx-inference";
+import { readFileSync } from "fs";
+
+const modelBuffer = readFileSync("./coco128.onnx").buffer;
+
+const detector = new YoloDetectionInference({
+  model: {
+    onnx: modelBuffer,
+    classNames: ["person", "car", "bicycle"],
+  },
+  thresholds: { confidence: 0.5 },
+});
+
+await detector.init();
+const detections = await detector.detect(imageBuffer);
+await detector.destroy();
+```
+
+See the [server-side demo repo](https://github.com/PT-Perkasa-Pilar-Utama/yolo-onnx-bun-demo) for a complete example.
+
+### Client-side (browser)
+
+```ts
+import { YoloDetectionInference } from "ppu-yolo-onnx-inference/web";
+
+const response = await fetch("/model.onnx");
+const modelBuffer = await response.arrayBuffer();
+
+const detector = new YoloDetectionInference({
+  model: {
+    onnx: modelBuffer,
+    classNames: ["person", "car", "bicycle"],
+  },
+  thresholds: { confidence: 0.5 },
+});
+
+await detector.init();
+const detections = await detector.detect(imageBuffer);
+await detector.destroy();
+```
+
+Try the [live client-side demo](https://pt-perkasa-pilar-utama.github.io/ppu-yolo-onnx-inference/) — runs entirely in the browser with webcam support.
+
+### Using via CDN (no bundler)
+
+For plain HTML pages, use an import map to resolve bare specifiers:
+
+```html
+<script type="importmap">
+{
+  "imports": {
+    "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/ort.all.bundle.min.mjs",
+    "onnxruntime-common": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/ort.all.bundle.min.mjs",
+    "ppu-ocv/web": "https://cdn.jsdelivr.net/npm/ppu-ocv@2/index.web.js",
+    "@techstark/opencv-js": "https://cdn.jsdelivr.net/npm/@aspect-build/aspect-opencv-js@4.10.0-release.2/opencv.js"
+  }
+}
+</script>
+<script type="module">
+  import { YoloDetectionInference } from "https://cdn.jsdelivr.net/npm/ppu-yolo-onnx-inference@2/web/index.js";
+
+  // ... same API as above
+</script>
+```
+
+## Getting the ONNX model and class names
+
+See [`yolo-convert-onnx.py`](./examples/yolo-convert-onnx.py) to export a YOLO model to ONNX format and extract the class name list.
 
 ## Configuration
 
-All options are grouped under the YoloDetectionOptions interface:
+All options are grouped under the `YoloDetectionOptions` interface:
 
 ```ts
-export interface YoloDetectionOptions {
-  /** File paths to the required Onnx YOLO model and class name list. */
+interface YoloDetectionOptions {
   model: ModelOptions;
-
-  /** Controls threshold for object detection. */
   thresholds?: ModelThresholds;
-
-  /** Controls model input output tensor metadata. */
   modelMetadata?: ModelMetadata;
-
-  /** Controls logging and image dump behavior for debugging. */
   debug?: DebuggingOptions;
 }
 ```
@@ -88,93 +138,75 @@ export interface YoloDetectionOptions {
 | Property           | Type               | Description                                                       |
 | ------------------ | ------------------ | ----------------------------------------------------------------- |
 | `inputShape`       | `[number, number]` | Input image shape (e.g., [640, 640]). Defaults to model metadata. |
-| `inputTensorName`  | `string`           | Output tensor name (default from model metadata).                 |
-| `outputTensorName` | `string`           | Input tensor name (default from model metadata).                  |
+| `inputTensorName`  | `string`           | Input tensor name (default from model metadata).                  |
+| `outputTensorName` | `string`           | Output tensor name (default from model metadata).                 |
 
 #### `DebuggingOptions`
 
 | Property      |   Type    | Default | Description                                              |
 | ------------- | :-------: | :-----: | :------------------------------------------------------- |
 | `verbose`     | `boolean` | `false` | Turn on detailed console logs of each processing step.   |
-| `debug`       | `boolean` | `false` | Write intermediate image frames to disk.                 |
+| `debug`       | `boolean` | `false` | Write intermediate image frames to disk (server only).   |
 | `debugFolder` | `string`  | `"out"` | Directory (relative to CWD) to save debug image outputs. |
 
-## Result example
+## Result format
 
 ```ts
 [
   {
-    box: {
-      x: 275,
-      y: 6,
-      width: 24,
-      height: 38,
-    },
+    box: { x: 275, y: 6, width: 24, height: 38 },
     className: "person",
     classId: 0,
-    confidence: 0.9873744249343872,
+    confidence: 0.987,
   },
   {
-    box: {
-      x: 5,
-      y: 2,
-      width: 24,
-      height: 38,
-    },
+    box: { x: 5, y: 2, width: 24, height: 38 },
     className: "car",
     classId: 1,
-    confidence: 0.9779072999954224,
-  },
-  {
-    box: {
-      x: 247,
-      y: 6,
-      width: 24,
-      height: 39,
-    },
-    className: "bicycle",
-    classId: 2,
-    confidence: 0.9770053625106812,
-  },
-  {
-    box: {
-      x: 32,
-      y: 3,
-      width: 23,
-      height: 38,
-    },
-    className: "car",
-    classId: 1,
-    confidence: 0.9710473418235779,
+    confidence: 0.978,
   },
 ];
 ```
 
+## Architecture
+
+The library uses a Platform Provider pattern to share all business logic between server and browser:
+
+```
+src/
+├── core/              # Platform-agnostic (single source of truth)
+│   ├── platform.ts    # PlatformProvider interface
+│   └── base-yolo-inference.ts
+├── processor/         # Node.js wrapper (onnxruntime-node + ppu-ocv)
+├── web/               # Browser wrapper (onnxruntime-web + ppu-ocv/web)
+├── interface.ts       # Shared types
+├── constant.ts        # Default thresholds
+└── index.ts           # Node.js entrypoint
+```
+
+Import paths:
+
+| Environment | Import                                  |
+| ----------- | --------------------------------------- |
+| Node / Bun  | `ppu-yolo-onnx-inference`               |
+| Browser     | `ppu-yolo-onnx-inference/web`           |
+
 ## Contributing
 
-Contributions are welcome! If you would like to contribute, please follow these steps:
+1. Fork the repository
+2. Create a feature branch
+3. Implement changes and add tests
+4. Submit a pull request
 
-1. **Fork the Repository:** Create your own fork of the project.
-2. **Create a Feature Branch:** Use a descriptive branch name for your changes.
-3. **Implement Changes:** Make your modifications, add tests, and ensure everything passes.
-4. **Submit a Pull Request:** Open a pull request to discuss your changes and get feedback.
-
-### Running Tests
-
-This project uses Bun for testing. To run the tests locally, execute:
+### Running tests
 
 ```bash
 bun test
 ```
 
-Ensure that all tests pass before submitting your pull request.
-
 ## Scripts
 
-Recommended development environment is in linux-based environment.  
 Library template: https://github.com/aquapi/lib-template
-
-All script sources and usage.
 
 ### [Build](./scripts/build.ts)
 
@@ -186,10 +218,4 @@ Move [`package.json`](./package.json), [`README.md`](./README.md) to [`lib`](./l
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## Support
-
-If you encounter any issues or have suggestions, please open an issue in the repository.
-
-Happy coding!
+MIT — see [LICENSE](LICENSE).
