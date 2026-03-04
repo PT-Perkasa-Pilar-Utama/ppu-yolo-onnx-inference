@@ -1,6 +1,6 @@
 {
   "name": "ppu-yolo-onnx-inference",
-  "version": "1.2.1",
+  "version": "2.0.0",
   "description": "Use your YOLO onnx object detection model in Typescript Bun environment easily.",
   "keywords": [
     "yolo",
@@ -12,42 +12,62 @@
     "image-processing",
     "bun-compatible",
     "bun",
-    "typescript"
+    "typescript",
+    "browser",
+    "web"
   ],
   "author": "snowfluke",
   "license": "MIT",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./web": {
+      "types": "./web/index.d.ts",
+      "default": "./web/index.js"
+    }
+  },
   "scripts": {
     "task": "bun scripts/task.ts",
     "build:test": "bun task build && bun test",
     "build:publish": "bun task build && bun task report-size && bun task publish",
-    "lint": "eslint ./src",
-    "lint:fix": "eslint ./src --fix"
+    "lint": "prettier --check ./src",
+    "lint:fix": "prettier --write ./src",
+    "demo": "bunx -y serve -l 3333 ."
   },
   "devDependencies": {
-    "@stylistic/eslint-plugin": "latest",
     "@types/bun": "latest",
     "@types/uglify-js": "latest",
-    "eslint": "latest",
-    "eslint-plugin-jsdoc": "latest",
     "mitata": "latest",
     "onnxruntime-node": "^1.23.2",
-    "prettier": "^3.7.4",
+    "onnxruntime-web": "^1.23.2",
+    "prettier": "^3.8.1",
     "tsx": "latest",
     "typescript": "latest",
-    "typescript-eslint": "latest",
     "uglify-js": ">=2.4.24"
   },
   "peerDependencies": {
-    "onnxruntime-node": "^1.23.2"
+    "onnxruntime-node": "^1.23.2",
+    "onnxruntime-web": "^1.23.2"
+  },
+  "peerDependenciesMeta": {
+    "onnxruntime-node": {
+      "optional": true
+    },
+    "onnxruntime-web": {
+      "optional": true
+    }
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/PT-Perkasa-Pilar-Utama/ppu-yolo-onnx-inference.git"
   },
   "dependencies": {
-    "ppu-ocv": "^1.7.0"
+    "onnxruntime-common": "^1.23.2",
+    "ppu-ocv": "^2.0.0"
   }
 }

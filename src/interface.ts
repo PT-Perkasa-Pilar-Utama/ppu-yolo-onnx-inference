@@ -1,4 +1,4 @@
-import type { Tensor } from "onnxruntime-node";
+import type { Tensor } from "onnxruntime-common";
 
 /**
  * Controls verbose output and image dumps for debugging OCR.

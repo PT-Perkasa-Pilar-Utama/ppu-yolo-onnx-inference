@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YOLO ONNX — Live Webcam Detection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #111;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #d4d4d4;
+      --text-dim: #777;
+      --accent: #3b82f6;
+      --green: #22c55e;
+      --red: #ef4444;
+      --radius: 8px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; padding: 1.5rem; }
+    h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; }
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; flex-wrap: wrap; gap: .5rem; }
+    .header-right { display: flex; align-items: center; gap: 1rem; font-size: .8rem; color: var(--text-dim); }
+
+    .layout { display: grid; grid-template-columns: 1fr 300px; gap: 1.25rem; max-width: 1100px; margin: 0 auto; }
+    @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; }
+    .panel-title { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-dim); margin-bottom: .75rem; }
+
+    /* Video area */
+    .video-area { position: relative; background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 4/3; }
+    .video-area video { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .video-area canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+
+    /* Controls */
+    .field { margin-bottom: .85rem; }
+    .field label { display: block; font-size: .72rem; color: var(--text-dim); margin-bottom: .3rem; text-transform: uppercase; letter-spacing: .04em; }
+    .field input[type=range] { width: 100%; accent-color: var(--accent); }
+    .field-row { display: flex; justify-content: space-between; align-items: baseline; }
+    .field-val { font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--text); }
+    .field input[type=file] { font-size: .78rem; color: var(--text-dim); width: 100%; }
+    textarea {
+      width: 100%; font-family: var(--font); font-size: .72rem;
+      background: #111; color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: .6rem; resize: vertical; min-height: 60px;
+    }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: .35rem;
+      padding: .5rem 1rem; border: 1px solid var(--border); border-radius: 6px;
+      font-family: var(--font); font-size: .78rem; font-weight: 500;
+      cursor: pointer; background: var(--surface); color: var(--text);
+      transition: background .15s;
+    }
+    .btn:hover { background: var(--border); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-primary:disabled { background: var(--accent); }
+
+    .btn-row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .75rem; }
+
+    /* Status bar */
+    .status-bar {
+      font-size: .75rem; color: var(--text-dim); margin-top: .6rem;
+      display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; min-height: 1.2em;
+    }
+    .status-bar .tag { padding: .15rem .45rem; border-radius: 4px; font-weight: 500; font-size: .7rem; }
+    .tag-ok { background: rgba(34,197,94,.12); color: var(--green); }
+    .tag-err { background: rgba(239,68,68,.12); color: var(--red); }
+    .tag-info { background: rgba(59,130,246,.12); color: var(--accent); }
+
+    /* Detections list */
+    .det-list { max-height: 240px; overflow-y: auto; font-size: .78rem; }
+    .det-item { display: flex; justify-content: space-between; padding: .35rem 0; border-bottom: 1px solid var(--border); }
+    .det-item:last-child { border-bottom: none; }
+    .det-class { font-weight: 500; }
+    .det-conf { color: var(--green); font-variant-numeric: tabular-nums; }
+    .det-count { font-size: .75rem; color: var(--text-dim); margin-bottom: .5rem; }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/ort.all.bundle.min.mjs",
+      "onnxruntime-common": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/ort.all.bundle.min.mjs",
+      "ppu-ocv/web": "https://cdn.jsdelivr.net/npm/ppu-ocv@2/index.web.js",
+      "@techstark/opencv-js": "https://cdn.jsdelivr.net/npm/@aspect-build/aspect-opencv-js@4.10.0-release.2/opencv.js"
+    }
+  }
+  </script>
+</head>
+<body>
+
+<div style="max-width:1100px;margin:0 auto">
+  <div class="header">
+    <h1>YOLO ONNX — Live Detection</h1>
+    <div class="header-right">
+      <span id="fps-display">-- fps</span>
+      <span id="latency-display">-- ms</span>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- Left: Video -->
+    <div>
+      <div class="panel">
+        <div class="video-area" id="video-area">
+          <video id="video" autoplay muted playsinline></video>
+          <canvas id="overlay"></canvas>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="start-btn" disabled>Start Detection</button>
+          <button class="btn" id="stop-btn" disabled>Stop</button>
+          <button class="btn" id="snapshot-btn" disabled>Snapshot</button>
+        </div>
+        <div class="status-bar" id="status-bar"></div>
+      </div>
+    </div>
+
+    <!-- Right: Config + Results -->
+    <div style="display:flex;flex-direction:column;gap:1rem">
+      <div class="panel">
+        <div class="panel-title">Model</div>
+        <div class="field">
+          <label>ONNX file</label>
+          <input type="file" id="model-input" accept=".onnx" />
+        </div>
+        <button class="btn" style="width:100%;font-size:.72rem" id="load-bundled">Load bundled COCO128</button>
+
+        <div class="field" style="margin-top:.85rem">
+          <label>Class names (comma-separated)</label>
+          <textarea id="class-names" rows="3" spellcheck="false">person, bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light, fire hydrant, stop sign, parking meter, bench, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe, backpack, umbrella, handbag, tie, suitcase, frisbee, skis, snowboard, sports ball, kite, baseball bat, baseball glove, skateboard, surfboard, tennis racket, bottle, wine glass, cup, fork, knife, spoon, bowl, banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, chair, couch, potted plant, bed, dining table, toilet, tv, laptop, mouse, remote, keyboard, cell phone, microwave, oven, toaster, sink, refrigerator, book, clock, vase, scissors, teddy bear, hair drier, toothbrush</textarea>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Settings</div>
+        <div class="field">
+          <div class="field-row"><label>Confidence</label><span class="field-val" id="conf-val">0.50</span></div>
+          <input type="range" id="conf-slider" min="0.05" max="1" step="0.05" value="0.50" />
+        </div>
+        <div class="field">
+          <div class="field-row"><label>IoU threshold</label><span class="field-val" id="iou-val">0.50</span></div>
+          <input type="range" id="iou-slider" min="0.1" max="1" step="0.05" value="0.50" />
+        </div>
+        <div class="field">
+          <div class="field-row"><label>Target FPS</label><span class="field-val" id="fps-val">5</span></div>
+          <input type="range" id="fps-slider" min="1" max="30" step="1" value="5" />
+        </div>
+      </div>
+
+      <div class="panel" id="results-panel" style="display:none">
+        <div class="panel-title">Detections</div>
+        <div class="det-count" id="det-count"></div>
+        <div class="det-list" id="det-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ── Import ───────────────────────────────────────────────────────────
+let YoloMod;
+try { YoloMod = await import("./lib/web/index.js"); }
+catch { YoloMod = await import("https://cdn.jsdelivr.net/npm/ppu-yolo-onnx-inference@2/web/index.js"); }
+const { YoloDetectionInference } = YoloMod;
+
+// ── DOM ──────────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const video       = $("video");
+const overlay     = $("overlay");
+const startBtn    = $("start-btn");
+const stopBtn     = $("stop-btn");
+const snapshotBtn = $("snapshot-btn");
+const modelInput  = $("model-input");
+const loadBundled = $("load-bundled");
+const classNames  = $("class-names");
+const confSlider  = $("conf-slider");
+const confVal     = $("conf-val");
+const iouSlider   = $("iou-slider");
+const iouVal      = $("iou-val");
+const fpsSlider   = $("fps-slider");
+const fpsVal      = $("fps-val");
+const fpsDisplay  = $("fps-display");
+const latDisplay  = $("latency-display");
+const statusBar   = $("status-bar");
+const resultsPanel = $("results-panel");
+const detCount    = $("det-count");
+const detList     = $("det-list");
+
+// ── State ────────────────────────────────────────────────────────────
+let detector    = null;
+let modelBuffer = null;
+let running     = false;
+let frameId     = null;
+let stream      = null;
+
+// ── Helpers ──────────────────────────────────────────────────────────
+function setStatus(msg, type = "info") {
+  statusBar.innerHTML = `<span class="tag tag-${type}">${type === "ok" ? "ready" : type === "err" ? "error" : "info"}</span> ${msg}`;
+}
+
+function bindSlider(slider, display) {
+  slider.addEventListener("input", () => {
+    display.textContent = slider.step >= 1 ? slider.value : parseFloat(slider.value).toFixed(2);
+  });
+}
+bindSlider(confSlider, confVal);
+bindSlider(iouSlider, iouVal);
+bindSlider(fpsSlider, fpsVal);
+
+// ── Webcam ───────────────────────────────────────────────────────────
+async function startCamera() {
+  if (stream) return;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } });
+    video.srcObject = stream;
+    await video.play();
+    overlay.width = video.videoWidth;
+    overlay.height = video.videoHeight;
+    snapshotBtn.disabled = false;
+    setStatus("Camera active", "ok");
+  } catch (err) {
+    setStatus("Camera access denied: " + err.message, "err");
+  }
+}
+
+function stopCamera() {
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  video.srcObject = null;
+  snapshotBtn.disabled = true;
+}
+
+// ── Model ────────────────────────────────────────────────────────────
+modelInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  setStatus("Loading model...");
+  modelBuffer = await file.arrayBuffer();
+  await initDetector();
+});
+
+loadBundled.addEventListener("click", async () => {
+  loadBundled.disabled = true;
+  setStatus("Fetching bundled COCO128 model...");
+  try {
+    const resp = await fetch("./examples/coco128/coco128.onnx");
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    modelBuffer = await resp.arrayBuffer();
+    await initDetector();
+  } catch (err) {
+    setStatus("Failed: " + err.message, "err");
+  } finally {
+    loadBundled.disabled = false;
+  }
+});
+
+async function initDetector() {
+  const names = classNames.value.split(",").map(s => s.trim()).filter(Boolean);
+  if (!names.length) { setStatus("Enter class names", "err"); return; }
+  if (!modelBuffer) return;
+
+  try {
+    if (detector) await detector.destroy();
+    detector = new YoloDetectionInference({
+      model: { onnx: modelBuffer, classNames: names },
+      thresholds: { confidence: parseFloat(confSlider.value), iou: parseFloat(iouSlider.value) },
+    });
+    setStatus("Initializing ONNX runtime...");
+    await detector.init();
+    setStatus("Model ready", "ok");
+    startBtn.disabled = false;
+    await startCamera();
+  } catch (err) {
+    setStatus("Init failed: " + err.message, "err");
+    detector = null;
+  }
+}
+
+// ── Detection loop ───────────────────────────────────────────────────
+const COLORS = ["#3b82f6","#22c55e","#eab308","#ef4444","#8b5cf6","#ec4899","#06b6d4","#f97316","#14b8a6","#6366f1"];
+
+startBtn.addEventListener("click", () => {
+  if (!detector || running) return;
+  running = true;
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  detectLoop();
+});
+
+stopBtn.addEventListener("click", stopDetection);
+
+function stopDetection() {
+  running = false;
+  if (frameId) { cancelAnimationFrame(frameId); frameId = null; }
+  startBtn.disabled = !detector;
+  stopBtn.disabled = true;
+  const ctx = overlay.getContext("2d");
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+}
+
+async function detectLoop() {
+  if (!running || !detector) return;
+
+  const targetFps = parseInt(fpsSlider.value);
+  const interval = 1000 / targetFps;
+
+  // Reinit detector if thresholds changed
+  const newConf = parseFloat(confSlider.value);
+  const newIou = parseFloat(iouSlider.value);
+
+  const t0 = performance.now();
+
+  // Capture frame to canvas
+  const captureCanvas = document.createElement("canvas");
+  captureCanvas.width = video.videoWidth;
+  captureCanvas.height = video.videoHeight;
+  captureCanvas.getContext("2d").drawImage(video, 0, 0);
+
+  try {
+    const detections = await detector.detect(captureCanvas);
+    const latency = Math.round(performance.now() - t0);
+    const actualFps = Math.min(targetFps, Math.round(1000 / Math.max(latency, 1)));
+
+    latDisplay.textContent = latency + " ms";
+    fpsDisplay.textContent = actualFps + " fps";
+
+    drawOverlay(detections);
+    showResults(detections);
+  } catch (err) {
+    console.error("Detection error:", err);
+  }
+
+  if (running) {
+    const elapsed = performance.now() - t0;
+    const delay = Math.max(0, interval - elapsed);
+    setTimeout(() => { frameId = requestAnimationFrame(detectLoop); }, delay);
+  }
+}
+
+function drawOverlay(detections) {
+  const ctx = overlay.getContext("2d");
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+  for (const det of detections) {
+    const { x, y, width, height } = det.box;
+    const color = COLORS[det.classId % COLORS.length];
+    const lw = Math.max(2, Math.round(overlay.width / 400));
+
+    // Box
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    ctx.strokeRect(x, y, width, height);
+
+    // Label background
+    const fontSize = Math.max(11, Math.round(overlay.width / 60));
+    ctx.font = `500 ${fontSize}px Inter, sans-serif`;
+    const label = `${det.className} ${(det.confidence * 100).toFixed(0)}%`;
+    const tm = ctx.measureText(label);
+    const pad = 3;
+    const lh = fontSize + pad * 2;
+    const ly = y > lh + 2 ? y - lh : y;
+
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.8;
+    ctx.fillRect(x, ly, tm.width + pad * 2, lh);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#fff";
+    ctx.fillText(label, x + pad, ly + fontSize + pad / 2 - 1);
+  }
+}
+
+function showResults(detections) {
+  resultsPanel.style.display = detections.length ? "block" : "none";
+  detCount.textContent = detections.length + " object" + (detections.length !== 1 ? "s" : "");
+  detList.innerHTML = detections.map(d =>
+    `<div class="det-item"><span class="det-class">${d.className}</span><span class="det-conf">${(d.confidence * 100).toFixed(1)}%</span></div>`
+  ).join("");
+}
+
+// ── Snapshot ─────────────────────────────────────────────────────────
+snapshotBtn.addEventListener("click", () => {
+  const c = document.createElement("canvas");
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext("2d").drawImage(video, 0, 0);
+
+  // Composite overlay
+  const overlayCtx = overlay.getContext("2d");
+  c.getContext("2d").drawImage(overlay, 0, 0);
+
+  const a = document.createElement("a");
+  a.href = c.toDataURL("image/png");
+  a.download = `yolo-snapshot-${Date.now()}.png`;
+  a.click();
+});
+
+// ── Init ─────────────────────────────────────────────────────────────
+setStatus("Load a model to begin");
+</script>
+</body>
+</html>

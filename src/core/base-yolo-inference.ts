@@ -1,10 +1,9 @@
-import * as ort from "onnxruntime-node";
-import { Canvas, CanvasToolkit, createCanvas, ImageProcessor } from "ppu-ocv";
+import type { InferenceSession, Tensor } from "onnxruntime-common";
 import {
   DEFAULT_DEBUG_OPTIONS,
   DEFAULT_THRESHOLDS,
   STANDARD_MODEL_INPUT_SHAPE,
-} from "./constant.js";
+} from "../constant.js";
 import type {
   Box,
   DebuggingOptions,
@@ -14,47 +13,50 @@ import type {
   PreprocessYoloResult,
   TensorValueMetadata,
   YoloDetectionOptions,
-} from "./interface.js";
+} from "../interface.js";
+import type { CoreCanvas, PlatformProvider } from "./platform.js";
 
 /**
- * YOLOv11 Object Detection Inference Engine
+ * Platform-agnostic YOLOv11 Object Detection Inference Engine.
  *
- * High-performance YOLO model inference with image preprocessing,
- * model execution, and NMS post-processing.
- *
- * @example
- * const detector = new YoloDetectionInference({
- *   model: {
- *     path: './model.onnx',
- *     classNames: ['person', 'car', 'bicycle']
- *   },
- *   thresholds: {
- *     confidence: 0.5
- *   }
- * });
- *
- * await detector.init();
- * const detections = await detector.detect(imageBuffer);
+ * Contains all business logic for image preprocessing, model inference,
+ * and NMS post-processing. Platform-specific behaviour (canvas creation,
+ * ONNX runtime, file I/O) is delegated to the injected {@link PlatformProvider}.
  */
-export class YoloDetectionInference {
+export class BaseYoloDetectionInference {
   private readonly model: ArrayBuffer;
-  private readonly classNames: string[];
-  private readonly thresholds: Required<ModelThresholds>;
-  private readonly debugging: Required<DebuggingOptions>;
+  /** Class names for object detection labels. */
+  protected readonly classNames: string[];
+  /** Merged threshold configuration. */
+  protected readonly thresholds: Required<ModelThresholds>;
+  /** Merged debugging configuration. */
+  protected readonly debugging: Required<DebuggingOptions>;
+  /** Platform abstraction layer. */
+  protected readonly platform: PlatformProvider;
+
   private modelMetadata: ModelMetadata | null = null;
-  private session: ort.InferenceSession | null = null;
+  private session: InferenceSession | null = null;
   private static readonly CHANNELS = 3;
 
-  constructor(options: YoloDetectionOptions) {
+  constructor(options: YoloDetectionOptions, platform: PlatformProvider) {
     this.model = options.model.onnx;
     this.classNames = options.model.classNames;
     this.thresholds = { ...DEFAULT_THRESHOLDS, ...options.thresholds };
     this.debugging = { ...DEFAULT_DEBUG_OPTIONS, ...options.debug };
     this.modelMetadata = options.modelMetadata || null;
+    this.platform = platform;
   }
 
   /**
-   * Initialize the YOLO model and prepare for inference
+   * Whether the model session has been initialised.
+   * @returns `true` after a successful {@link init} call.
+   */
+  public isInitialized(): boolean {
+    return this.session !== null;
+  }
+
+  /**
+   * Initialize the YOLO model and prepare for inference.
    */
   public async init(): Promise<void> {
     if (!this.model) {
@@ -62,33 +64,38 @@ export class YoloDetectionInference {
     }
 
     try {
-      this.log("init", `Loading model`);
-      this.session = await ort.InferenceSession.create(this.model);
-      await new Promise((resolve) => setImmediate(resolve));
+      this.log("init", "Loading model");
+      this.session = await this.platform.createInferenceSession(this.model);
+      await this.platform.scheduleYield();
 
       this.log(
         "init",
         `Model loaded successfully\n\tinputNames: ${
           this.session.inputNames
-        }\n\toutputNames: ${
-          this.session.outputNames
-        }\n\tinputMetadata: ${JSON.stringify(
-          this.session.inputMetadata
-        )}\n\toutputMetadata: ${JSON.stringify(this.session.outputMetadata)}`
+        }\n\toutputNames: ${this.session.outputNames}`,
       );
 
       if (!this.modelMetadata) {
-        const modelInputShape = (
-          this.session.inputMetadata[0] as TensorValueMetadata
-        ).shape.slice(2) as [number, number];
+        let inputShape = STANDARD_MODEL_INPUT_SHAPE;
+        try {
+          /* inputMetadata may not exist on every ORT backend */
+          const meta = (this.session as unknown as Record<string, unknown[]>)
+            .inputMetadata;
+          if (Array.isArray(meta) && meta.length > 0) {
+            const shape = (meta[0] as TensorValueMetadata).shape.slice(2) as [
+              number,
+              number,
+            ];
+            if (shape.length === 2) inputShape = shape;
+          }
+        } catch {
+          /* fall back to standard shape */
+        }
 
         this.modelMetadata = {
           inputTensorName: this.session.inputNames[0],
           outputTensorName: this.session.outputNames[0],
-          inputShape:
-            modelInputShape.length === 2
-              ? modelInputShape
-              : STANDARD_MODEL_INPUT_SHAPE,
+          inputShape,
         };
       } else {
         this.modelMetadata = {
@@ -101,7 +108,7 @@ export class YoloDetectionInference {
         };
       }
 
-      await ImageProcessor.initRuntime();
+      await this.platform.initRuntime();
       this.log("init", "ImageProcessor runtime initialized");
     } catch (error) {
       throw new Error(`Failed to load model: ${error}`);
@@ -109,27 +116,14 @@ export class YoloDetectionInference {
   }
 
   /**
-   * Convert an ArrayBuffer to a Canvas
-   * @param buffer - The input image as ArrayBuffer
-   * @returns A Canvas object containing the image
-   * @throws Error if the conversion fails
+   * Detect objects in an image.
+   * @param image - The input image as ArrayBuffer or platform canvas.
+   * @returns An array of detected objects with bounding boxes, class names, and confidence scores.
+   * @throws Error if the model is not initialized or detection fails.
    */
-  static async convertBufferToCanvas(buffer: ArrayBuffer): Promise<Canvas> {
-    return ImageProcessor.prepareCanvas(buffer);
-  }
-
-  /**
-   * Detect objects in an image
-   * @param image - The input image as ArrayBuffer or Canvas
-   * @returns An array of detected objects with bounding boxes, class names, and confidence scores
-   * @throws Error if the model is not initialized or detection fails
-   * @example
-   * const detections = await detector.detect(imageBuffer);
-   * detections.forEach(detection => {
-   *   console.log(`Detected ${detection.className} at ${JSON.stringify(detection.box)} with confidence ${detection.confidence}`);
-   * });
-   */
-  public async detect(image: ArrayBuffer | Canvas): Promise<DetectedObject[]> {
+  public async detect(
+    image: ArrayBuffer | CoreCanvas,
+  ): Promise<DetectedObject[]> {
     this.log("detect", "Starting object detection");
 
     try {
@@ -142,7 +136,7 @@ export class YoloDetectionInference {
         this.debugTensorData(
           output.data as Float32Array,
           output.dims[2],
-          output.dims[1]
+          output.dims[1],
         );
       }
 
@@ -160,23 +154,22 @@ export class YoloDetectionInference {
   }
 
   private async preprocessImage(
-    image: ArrayBuffer | Canvas
+    image: ArrayBuffer | CoreCanvas,
   ): Promise<PreprocessYoloResult> {
     if (!this.modelMetadata) {
       throw new Error("Model not initialized. Call init() first");
     }
 
-    const canvas =
-      image instanceof Canvas
-        ? image
-        : await ImageProcessor.prepareCanvas(image);
+    const canvas = this.platform.isCanvasLike(image)
+      ? image
+      : await this.platform.prepareCanvas(image);
 
     const { width: originalWidth, height: originalHeight } = canvas;
     const [modelInputWidth, modelInputHeight] = this.modelMetadata.inputShape;
 
     const scaleRatio = Math.min(
       modelInputWidth / originalWidth,
-      modelInputHeight / originalHeight
+      modelInputHeight / originalHeight,
     );
     const scaledWidth = Math.round(originalWidth * scaleRatio);
     const scaledHeight = Math.round(originalHeight * scaleRatio);
@@ -184,32 +177,40 @@ export class YoloDetectionInference {
     const padX = (modelInputWidth - scaledWidth) / 2;
     const padY = (modelInputHeight - scaledHeight) / 2;
 
-    const scaledCanvas = createCanvas(modelInputWidth, modelInputHeight);
-    const ctx = scaledCanvas.getContext("2d");
+    const scaledCanvas = this.platform.createCanvas(
+      modelInputWidth,
+      modelInputHeight,
+    );
+    const ctx = this.platform.getContext2D(scaledCanvas);
 
     ctx.fillStyle = "rgb(114, 114, 114)";
     ctx.fillRect(0, 0, modelInputWidth, modelInputHeight);
 
-    const processor = new ImageProcessor(canvas);
-    const resized = processor
-      .resize({ width: scaledWidth, height: scaledHeight })
-      .toCanvas();
-    processor.destroy();
+    const resized = this.platform.resizeImage(
+      canvas,
+      scaledWidth,
+      scaledHeight,
+    );
 
-    // **FIX 3: Draw the resized image at the padded offset**
-    ctx.drawImage(resized, padX, padY, scaledWidth, scaledHeight);
+    ctx.drawImage(
+      resized as unknown as CanvasImageSource,
+      padX,
+      padY,
+      scaledWidth,
+      scaledHeight,
+    );
 
     const tensor = this.canvasToTensor(
       scaledCanvas,
       modelInputWidth,
-      modelInputHeight
+      modelInputHeight,
     );
 
     this.log(
       "preprocessImage",
       `Preprocessed: ${originalWidth}x${originalHeight} → ${modelInputWidth}x${modelInputHeight} (ratio: ${scaleRatio.toFixed(
-        3
-      )}, padX: ${padX.toFixed(1)}, padY: ${padY.toFixed(1)})`
+        3,
+      )}, padX: ${padX.toFixed(1)}, padY: ${padY.toFixed(1)})`,
     );
 
     return {
@@ -225,14 +226,14 @@ export class YoloDetectionInference {
   }
 
   private canvasToTensor(
-    canvas: any,
+    canvas: CoreCanvas,
     width: number,
-    height: number
+    height: number,
   ): Float32Array {
     const tensor = new Float32Array(
-      YoloDetectionInference.CHANNELS * height * width
+      BaseYoloDetectionInference.CHANNELS * height * width,
     );
-    const ctx = canvas.getContext("2d");
+    const ctx = this.platform.getContext2D(canvas);
     const imageData = ctx.getImageData(0, 0, width, height).data;
 
     for (let h = 0; h < height; h++) {
@@ -251,24 +252,25 @@ export class YoloDetectionInference {
   }
 
   private async runInference(
-    preprocessed: PreprocessYoloResult
-  ): Promise<ort.Tensor | null> {
+    preprocessed: PreprocessYoloResult,
+  ): Promise<Tensor | null> {
     if (!this.session || !this.modelMetadata) {
       throw new Error("Model not initialized. Call init() first");
     }
 
     try {
-      const inputTensor = new ort.Tensor("float32", preprocessed.tensor, [
-        1,
-        3,
-        preprocessed.modelInputHeight,
-        preprocessed.modelInputWidth,
-      ]);
+      const inputTensor = this.platform.createTensor(
+        "float32",
+        preprocessed.tensor,
+        [1, 3, preprocessed.modelInputHeight, preprocessed.modelInputWidth],
+      );
 
-      const feeds = { [this.modelMetadata.inputTensorName]: inputTensor };
+      const feeds = {
+        [this.modelMetadata.inputTensorName]: inputTensor,
+      } as unknown as InferenceSession.FeedsType;
       const results = await this.session.run(feeds);
 
-      return results[this.modelMetadata.outputTensorName] || null;
+      return (results[this.modelMetadata.outputTensorName] as Tensor) || null;
     } catch (error) {
       console.error("Inference error:", error);
       throw error;
@@ -276,20 +278,20 @@ export class YoloDetectionInference {
   }
 
   private postprocessOutput(
-    tensor: ort.Tensor,
-    preprocessed: PreprocessYoloResult
+    tensor: Tensor,
+    preprocessed: PreprocessYoloResult,
   ): DetectedObject[] {
     const data = tensor.data as Float32Array;
     const [, numParams, numPredictions] = tensor.dims;
 
     this.log(
       "postprocessOutput",
-      `Post-processing output: numParams=${numParams}, numPredictions=${numPredictions}`
+      `Post-processing output: numParams=${numParams}, numPredictions=${numPredictions}`,
     );
 
     if (numParams < 4) {
       console.error(
-        `Invalid tensor shape: expected ≥4 parameters per box, got ${numParams}`
+        `Invalid tensor shape: expected ≥4 parameters per box, got ${numParams}`,
       );
       return [];
     }
@@ -298,7 +300,7 @@ export class YoloDetectionInference {
       data,
       numPredictions,
       numParams,
-      preprocessed
+      preprocessed,
     );
     const nmsIndices = this.applyNMS(candidates);
 
@@ -309,15 +311,15 @@ export class YoloDetectionInference {
     data: Float32Array,
     numPredictions: number,
     numParams: number,
-    preprocessed: PreprocessYoloResult
-  ) {
+    _preprocessed: PreprocessYoloResult,
+  ): Array<{ box: Box; score: number; classId: number }> {
     const candidates: Array<{ box: Box; score: number; classId: number }> = [];
     const numClasses = numParams - 4;
     const isSingleClass = numClasses <= 1;
 
     this.log(
       "extractCandidates",
-      `YOLOv11 format: numClasses=${numClasses}, isSingleClass=${isSingleClass}`
+      `YOLOv11 format: numClasses=${numClasses}, isSingleClass=${isSingleClass}`,
     );
 
     let debugCount = 0;
@@ -356,9 +358,9 @@ export class YoloDetectionInference {
           "extractCandidates",
           `Debug candidate ${i}: confidence=${finalConfidence.toFixed(4)}, ` +
             `box=[${cx.toFixed(1)}, ${cy.toFixed(1)}, ${w.toFixed(
-              1
+              1,
             )}, ${h.toFixed(1)}], ` +
-            `classId=${bestClassId}`
+            `classId=${bestClassId}`,
         );
         debugCount++;
       }
@@ -390,21 +392,16 @@ export class YoloDetectionInference {
     this.log(
       "extractCandidates",
       `Total candidates with confidence > 0.1: ${highConfidenceCount}\n[YOLO:extractCandidates] ` +
-        `Final candidates after filtering: ${candidates.length}`
+        `Final candidates after filtering: ${candidates.length}`,
     );
 
     if (candidates.length < 3 && this.thresholds.confidence > 0.1) {
       this.log(
         "extractCandidates",
-        "Few candidates found, trying with lower threshold..."
+        "Few candidates found, trying with lower threshold...",
       );
 
-      return this.extractWithLowerThreshold(
-        data,
-        numPredictions,
-        numParams,
-        preprocessed
-      );
+      return this.extractWithLowerThreshold(data, numPredictions, numParams);
     }
 
     return candidates;
@@ -414,8 +411,7 @@ export class YoloDetectionInference {
     data: Float32Array,
     numPredictions: number,
     numParams: number,
-    preprocessed: PreprocessYoloResult
-  ) {
+  ): Array<{ box: Box; score: number; classId: number }> {
     const candidates: Array<{ box: Box; score: number; classId: number }> = [];
     const numClasses = numParams - 4;
     const isSingleClass = numClasses <= 1;
@@ -423,7 +419,7 @@ export class YoloDetectionInference {
 
     this.log(
       "extractWithLowerThreshold",
-      `Trying lower threshold: ${lowerThreshold}`
+      `Trying lower threshold: ${lowerThreshold}`,
     );
 
     for (let i = 0; i < numPredictions; i++) {
@@ -476,7 +472,7 @@ export class YoloDetectionInference {
 
     this.log(
       "extractWithLowerThreshold",
-      `Candidates with lower threshold: ${candidates.length}`
+      `Candidates with lower threshold: ${candidates.length}`,
     );
     return candidates;
   }
@@ -484,7 +480,7 @@ export class YoloDetectionInference {
   private debugTensorData(
     data: Float32Array,
     numPredictions: number,
-    numParams: number
+    numParams: number,
   ): void {
     this.log("debugTensorData", "\n=== TENSOR DEBUG ===");
 
@@ -517,13 +513,13 @@ export class YoloDetectionInference {
       this.log(
         "debugTensorData",
         `${j + 1}. Index ${i}: conf=${confidence.toFixed(4)}, box=[${cx.toFixed(
-          1
-        )}, ${cy.toFixed(1)}, ${w.toFixed(1)}, ${h.toFixed(1)}]`
+          1,
+        )}, ${cy.toFixed(1)}, ${w.toFixed(1)}, ${h.toFixed(1)}]`,
       );
     }
 
     const ranges = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-    const counts = new Array(ranges.length - 1).fill(0);
+    const counts = new Array(ranges.length - 1).fill(0) as number[];
 
     confidences.forEach(({ confidence }) => {
       for (let r = 0; r < ranges.length - 1; r++) {
@@ -540,13 +536,13 @@ export class YoloDetectionInference {
         "debugTensorData",
         `${ranges[r].toFixed(1)}-${ranges[r + 1].toFixed(1)}: ${
           counts[r]
-        } detections`
+        } detections`,
       );
     }
   }
 
   private applyNMS(
-    candidates: Array<{ box: Box; score: number; classId: number }>
+    candidates: Array<{ box: Box; score: number; classId: number }>,
   ): number[] {
     const indices = candidates
       .map((_, i) => i)
@@ -561,7 +557,7 @@ export class YoloDetectionInference {
       for (let i = indices.length - 1; i >= 0; i--) {
         const iou = this.calculateIoU(
           candidates[current].box,
-          candidates[indices[i]].box
+          candidates[indices[i]].box,
         );
         if (iou > this.thresholds.iou) {
           indices.splice(i, 1);
@@ -575,7 +571,7 @@ export class YoloDetectionInference {
   private scaleCandidates(
     candidates: Array<{ box: Box; score: number; classId: number }>,
     indices: number[],
-    preprocessed: PreprocessYoloResult
+    preprocessed: PreprocessYoloResult,
   ): DetectedObject[] {
     return indices
       .map((i) => {
@@ -591,11 +587,11 @@ export class YoloDetectionInference {
 
         const width = Math.min(
           originalWidth - x,
-          Math.round(candidate.box.width / scaleRatio)
+          Math.round(candidate.box.width / scaleRatio),
         );
         const height = Math.min(
           originalHeight - y,
-          Math.round(candidate.box.height / scaleRatio)
+          Math.round(candidate.box.height / scaleRatio),
         );
 
         if (width <= 0 || height <= 0) return null;
@@ -626,8 +622,8 @@ export class YoloDetectionInference {
 
   private async saveDebugImages(
     preprocessed: PreprocessYoloResult,
-    originalImage: ArrayBuffer | Canvas,
-    detections: DetectedObject[]
+    originalImage: ArrayBuffer | CoreCanvas,
+    detections: DetectedObject[],
   ): Promise<void> {
     try {
       await this.savePreprocessedImage(preprocessed);
@@ -638,12 +634,14 @@ export class YoloDetectionInference {
   }
 
   private async savePreprocessedImage(
-    preprocessed: PreprocessYoloResult
+    preprocessed: PreprocessYoloResult,
   ): Promise<void> {
     const { modelInputWidth, modelInputHeight, tensor } = preprocessed;
-    const canvas = createCanvas(modelInputWidth, modelInputHeight);
-
-    const ctx = canvas.getContext("2d");
+    const canvas = this.platform.createCanvas(
+      modelInputWidth,
+      modelInputHeight,
+    );
+    const ctx = this.platform.getContext2D(canvas);
     const imageData = ctx.createImageData(modelInputWidth, modelInputHeight);
 
     for (let i = 0; i < modelInputWidth * modelInputHeight; i++) {
@@ -658,65 +656,56 @@ export class YoloDetectionInference {
 
     ctx.putImageData(imageData, 0, 0);
 
-    await CanvasToolkit.getInstance().saveImage({
+    await this.platform.saveDebugImage(
       canvas,
-      filename: "yolo-preprocessed",
-      path: this.debugging.debugFolder,
-    });
+      "yolo-preprocessed",
+      this.debugging.debugFolder,
+    );
   }
 
   private async saveDetectionVisualization(
-    image: ArrayBuffer | Canvas,
-    detections: DetectedObject[]
+    image: ArrayBuffer | CoreCanvas,
+    detections: DetectedObject[],
   ): Promise<void> {
-    const canvas =
-      image instanceof Canvas
-        ? image
-        : await ImageProcessor.prepareCanvas(image);
+    const canvas = this.platform.isCanvasLike(image)
+      ? image
+      : await this.platform.prepareCanvas(image);
 
-    const ctx = canvas.getContext("2d");
-    const toolkit = CanvasToolkit.getInstance();
+    const ctx = this.platform.getContext2D(canvas);
 
     detections.forEach((detection) => {
       const { x, y, width, height } = detection.box;
 
-      toolkit.drawLine({
-        ctx,
-        x,
-        y,
-        width,
-        height,
-        color: "yellow",
-        lineWidth: 3,
-      });
+      ctx.strokeStyle = "yellow";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, width, height);
 
       ctx.fillStyle = "yellow";
       ctx.font = "16px Arial";
       ctx.fillText(
         `${detection.className} ${(detection.confidence * 100).toFixed(1)}%`,
         x,
-        y > 20 ? y - 5 : y + height + 15
+        y > 20 ? y - 5 : y + height + 15,
       );
     });
 
-    await toolkit.saveImage({
+    await this.platform.saveDebugImage(
       canvas,
-      filename: "yolo-detections",
-      path: this.debugging.debugFolder,
-    });
+      "yolo-detections",
+      this.debugging.debugFolder,
+    );
   }
 
-  private log(caller: string, message: string): void {
+  /** Log a message when verbose debugging is enabled. */
+  protected log(caller: string, message: string): void {
     if (this.debugging.verbose) {
       console.log(`[YOLO:${caller}] ${message}`);
     }
   }
 
   /**
-   * Releases the onnx runtime session and cleans up resources.
-   * This method should be called when the inference engine is no longer needed
-   * to prevent memory leaks.
-   * @throws Error if the session release fails
+   * Releases the ONNX runtime session and cleans up resources.
+   * Safe to call even if the model was never initialised.
    */
   async destroy(): Promise<void> {
     this.log("destroy", "Cleaning up resources");
